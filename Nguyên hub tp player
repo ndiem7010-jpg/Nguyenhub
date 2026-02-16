@@ -1,0 +1,156 @@
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local guiParent = player:WaitForChild("PlayerGui")
+
+-- 1. Xóa bản cũ
+if guiParent:FindFirstChild("NguyenHub_DeltaStyle") then
+    guiParent.NguyenHub_DeltaStyle:Destroy()
+end
+
+-- 2. Tạo ScreenGui
+local gui = Instance.new("ScreenGui")
+gui.Name = "NguyenHub_DeltaStyle"
+gui.Parent = guiParent
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+--------------------------------------------------
+-- NÚT THU GỌN (PHONG CÁCH DELTA - VIỀN XANH LÁ)
+--------------------------------------------------
+local toggleBtn = Instance.new("ImageButton")
+toggleBtn.Name = "ToggleButton"
+toggleBtn.Parent = gui
+toggleBtn.Size = UDim2.new(0, 60, 0, 60) -- Hình vuông để tạo vòng tròn chuẩn
+toggleBtn.Position = UDim2.new(0, 20, 0.5, -30)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+toggleBtn.BackgroundTransparency = 0.2 -- Hơi trong suốt một chút cho đẹp
+toggleBtn.Active = true
+toggleBtn.Draggable = true 
+
+-- Bo tròn tuyệt đối (Tạo hình tròn)
+local corner = Instance.new("UICorner", toggleBtn)
+corner.CornerRadius = UDim.new(1, 0)
+
+-- THÊM VIỀN XANH LÁ (GIỐNG DELTA)
+local stroke = Instance.new("UIStroke", toggleBtn)
+stroke.Color = Color3.fromRGB(0, 255, 127) -- Màu xanh lá neon
+stroke.Thickness = 3 -- Độ dày của viền
+stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+-- Cập nhật ảnh Avatar vào vòng tròn
+local function updateAvatar()
+    local content, isReady = Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size180x180)
+    toggleBtn.Image = content
+end
+updateAvatar()
+
+--------------------------------------------------
+-- MENU CHÍNH (MAIN FRAME)
+--------------------------------------------------
+local main = Instance.new("Frame")
+main.Name = "MainFrame"
+main.Parent = gui
+main.Size = UDim2.new(0, 380, 0, 240)
+main.Position = UDim2.new(0.5, -190, 0.5, -120)
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+main.Visible = false
+main.Active = true
+main.Draggable = true 
+Instance.new("UICorner", main).CornerRadius = UDim.new(0, 15)
+
+-- Viền xanh cho cả Menu chính (tùy chọn)
+local mainStroke = Instance.new("UIStroke", main)
+mainStroke.Color = Color3.fromRGB(0, 255, 127)
+mainStroke.Thickness = 1
+mainStroke.Transparency = 0.5
+
+-- Tiêu đề
+local title = Instance.new("TextLabel", main)
+title.Size = UDim2.new(1, -20, 0, 40)
+title.Position = UDim2.new(0, 15, 0, 5)
+title.BackgroundTransparency = 1
+title.Text = "🌟 NGUYÊN HUB"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 18
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Player List
+local list = Instance.new("ScrollingFrame", main)
+list.Size = UDim2.new(0, 160, 1, -65)
+list.Position = UDim2.new(0, 15, 0, 50)
+list.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+list.BorderSizePixel = 0
+Instance.new("UICorner", list)
+
+local layout = Instance.new("UIListLayout", list)
+layout.Padding = UDim.new(0, 5)
+
+-- Right Panel
+local right = Instance.new("Frame", main)
+right.Size = UDim2.new(0, 180, 1, -65)
+right.Position = UDim2.new(0, 185, 0, 50)
+right.BackgroundTransparency = 1
+
+local pImg = Instance.new("ImageLabel", right)
+pImg.Size = UDim2.new(0, 80, 0, 80)
+pImg.Position = UDim2.new(0.5, -40, 0, 10)
+pImg.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+Instance.new("UICorner", pImg).CornerRadius = UDim.new(1, 0)
+
+local pName = Instance.new("TextLabel", right)
+pName.Size = UDim2.new(1, -10, 0, 35)
+pName.Position = UDim2.new(0, 5, 0, 100)
+pName.BackgroundTransparency = 1
+pName.Text = "Chọn người..."
+pName.TextColor3 = Color3.new(1, 1, 1)
+pName.TextScaled = true
+
+local tpBtn = Instance.new("TextButton", right)
+tpBtn.Size = UDim2.new(0.85, 0, 0, 35)
+tpBtn.Position = UDim2.new(0.075, 0, 0, 145)
+tpBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+tpBtn.Text = "TELEPORT"
+tpBtn.TextColor3 = Color3.new(1, 1, 1)
+tpBtn.Font = Enum.Font.GothamBold
+Instance.new("UICorner", tpBtn)
+
+--------------------------------------------------
+-- LOGIC
+--------------------------------------------------
+toggleBtn.MouseButton1Click:Connect(function()
+    main.Visible = not main.Visible
+end)
+
+local selectedP = nil
+local function updateSelection(p)
+    selectedP = p
+    pName.Text = p.DisplayName
+    local c, r = Players:GetUserThumbnailAsync(p.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+    pImg.Image = c
+end
+
+tpBtn.MouseButton1Click:Connect(function()
+    if selectedP and selectedP.Character and selectedP.Character:FindFirstChild("HumanoidRootPart") then
+        player.Character.HumanoidRootPart.CFrame = selectedP.Character.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
+    end
+end)
+
+local function refresh()
+    for _, v in pairs(list:GetChildren()) do if v:IsA("TextButton") then v:Destroy() end end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= player then
+            local b = Instance.new("TextButton", list)
+            b.Size = UDim2.new(0.95, 0, 0, 32)
+            b.BackgroundColor3 = Color3.fromRGB(45, 45, 50)
+            b.Text = p.DisplayName
+            b.TextColor3 = Color3.new(1, 1, 1)
+            Instance.new("UICorner", b)
+            b.MouseButton1Click:Connect(function() updateSelection(p) end)
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(refresh)
+Players.PlayerRemoving:Connect(refresh)
+refresh()
