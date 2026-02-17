@@ -1,0 +1,258 @@
+--[[
+    NGUYÊN HUB - HORIZONTAL V8 (SMART NPC)
+    - ESP: 4 Góc nhọn (Corner Box) + Tên.
+    - Smart NPC: ESP & Hitbox CẢ QUÁI NHƯNG CHỈ QUÁI BIẾT DI CHUYỂN.
+    - FOV: Viền siêu mảnh, rỗng ruột hoàn toàn.
+    - Fix: Tự ẩn ESP khi mục tiêu Die hoặc biến mất.
+]]
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local LP = Players.LocalPlayer
+
+-- ===== CONFIG =====
+local AimEnabled = false
+local HitboxEnabled = false
+local ESPEnabled = false
+local RainbowMode = false
+local Radius = 200
+local HitboxSize = 5
+local Smooth = 0.1
+local MainColor = Color3.fromRGB(0, 255, 0)
+local Hue = 0
+
+-- ===== DRAWINGS (FOV MẢNH) =====
+local FOV = Drawing.new("Circle")
+FOV.Thickness = 0.5
+FOV.Filled = false
+FOV.Visible = false
+FOV.Radius = Radius
+FOV.Color = MainColor
+
+local ESP_Storage = {}
+local ActiveTargets = {} -- Lưu trữ danh sách Player và Quái biết di chuyển
+
+-- ===== BỘ LỌC MỤC TIÊU THÔNG MINH (Chạy ngầm 1s/lần để đỡ lag) =====
+task.spawn(function()
+    while task.wait(1) do
+        local tempTargets = {}
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("Model") and obj ~= LP.Character then
+                local hum = obj:FindFirstChild("Humanoid")
+                local hrp = obj:FindFirstChild("HumanoidRootPart")
+                
+                if hum and hrp and hum.Health > 0 then
+                    local isPlayer = Players:GetPlayerFromCharacter(obj) ~= nil
+                    -- ĐIỀU KIỆN: Là người chơi HOẶC (Là Quái VÀ biết di chuyển VÀ không bị khóa cứng)
+                    if isPlayer or (hum.WalkSpeed > 0 and hrp.Anchored == false) then
+                        tempTargets[obj] = obj.Name
+                    end
+                end
+            end
+        end
+        ActiveTargets = tempTargets
+    end
+end)
+
+-- Dọn rác bộ nhớ (Memory Leak Prevention)
+task.spawn(function()
+    while task.wait(5) do
+        for model, drawings in pairs(ESP_Storage) do
+            if not model or not model.Parent then
+                for _, line in pairs(drawings.Corners) do line:Remove() end
+                drawings.Name:Remove()
+                ESP_Storage[model] = nil
+            end
+        end
+    end
+end)
+
+-- ===== UI SYSTEM (MENU NGANG) =====
+local gui = Instance.new("ScreenGui", LP:WaitForChild("PlayerGui"))
+gui.Name = "NguyenHub_HorizontalV8"
+
+local toggleBtn = Instance.new("ImageButton", gui)
+toggleBtn.Size = UDim2.new(0, 60, 0, 60)
+toggleBtn.Position = UDim2.new(0, 20, 0.5, -30)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+toggleBtn.Draggable = true
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(1, 0)
+local btnStroke = Instance.new("UIStroke", toggleBtn); btnStroke.Thickness = 3; btnStroke.Color = MainColor
+
+task.spawn(function()
+    toggleBtn.Image = Players:GetUserThumbnailAsync(LP.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size180x180)
+end)
+
+local main = Instance.new("Frame", gui)
+main.Size = UDim2.new(0, 580, 0, 320)
+main.Position = UDim2.new(0.5, -290, 0.5, -160)
+main.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+main.Visible = false; main.Active = true; main.Draggable = true
+Instance.new("UICorner", main)
+local mainStroke = Instance.new("UIStroke", main); mainStroke.Thickness = 2; mainStroke.Color = MainColor
+
+local title = Instance.new("TextLabel", main)
+title.Size = UDim2.new(1, 0, 0, 45); title.Text = "🌟 NGUYÊN HUB - SMART ESP & CORNER BOX"; title.TextColor3 = Color3.new(1, 1, 1); title.Font = Enum.Font.GothamBold; title.TextSize = 18; title.BackgroundTransparency = 1
+
+local container = Instance.new("Frame", main)
+container.Size = UDim2.new(1, -20, 1, -55); container.Position = UDim2.new(0, 10, 0, 50); container.BackgroundTransparency = 1
+
+local leftCol = Instance.new("ScrollingFrame", container)
+leftCol.Size = UDim2.new(0.5, -5, 1, 0); leftCol.BackgroundTransparency = 1; leftCol.ScrollBarThickness = 0
+local layoutL = Instance.new("UIListLayout", leftCol); layoutL.Padding = UDim.new(0, 8); layoutL.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+local rightCol = leftCol:Clone()
+rightCol.Parent = container; rightCol.Position = UDim2.new(0.5, 5, 0, 0)
+
+-- ===== HELPERS =====
+function AddToggle(txt, parent, callback)
+    local b = Instance.new("TextButton", parent)
+    b.Size = UDim2.new(0.95, 0, 0, 42); b.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    b.Text = txt .. ": OFF"; b.TextColor3 = Color3.new(1, 1, 1); b.Font = Enum.Font.GothamSemibold; Instance.new("UICorner", b)
+    local s = false
+    b.MouseButton1Click:Connect(function()
+        s = not s; b.Text = txt .. ": " .. (s and "ON" or "OFF"); b.BackgroundColor3 = s and MainColor or Color3.fromRGB(25, 25, 25); callback(s)
+    end)
+end
+
+function AddSlider(txt, min, max, parent, callback)
+    local frame = Instance.new("Frame", parent)
+    frame.Size = UDim2.new(0.95, 0, 0, 55); frame.BackgroundTransparency = 1
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(1, 0, 0, 20); label.Text = txt .. ": " .. min; label.TextColor3 = Color3.new(1, 1, 1); label.BackgroundTransparency = 1
+    local sBack = Instance.new("Frame", frame)
+    sBack.Size = UDim2.new(1, 0, 0, 6); sBack.Position = UDim2.new(0, 0, 0.7, 0); sBack.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    local sFill = Instance.new("Frame", sBack); sFill.Size = UDim2.new(0.5, 0, 1, 0); sFill.BackgroundColor3 = MainColor
+    local function Update(input)
+        local pos = math.clamp((input.Position.X - sBack.AbsolutePosition.X) / sBack.AbsoluteSize.X, 0, 1)
+        sFill.Size = UDim2.new(pos, 0, 1, 0); local val = math.floor(min + (max - min) * pos)
+        label.Text = txt .. ": " .. val; callback(val)
+    end
+    sBack.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local move = UserInputService.InputChanged:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseMovement then Update(i) end end)
+            UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then move:Disconnect() end end)
+            Update(input)
+        end
+    end)
+end
+
+-- ===== QUẢN LÝ DRAWING =====
+local function GetESP(model)
+    if ESP_Storage[model] then return ESP_Storage[model] end
+    local corners = {}
+    for i = 1, 8 do
+        local line = Drawing.new("Line")
+        line.Thickness = 1.5; line.Visible = false; line.Color = MainColor
+        corners[i] = line
+    end
+    local name = Drawing.new("Text")
+    name.Size = 14; name.Center = true; name.Outline = true; name.Visible = false; name.Color = Color3.new(1,1,1)
+    ESP_Storage[model] = {Corners = corners, Name = name}
+    return ESP_Storage[model]
+end
+
+local function HideESP(model)
+    if ESP_Storage[model] then
+        for _, line in pairs(ESP_Storage[model].Corners) do line.Visible = false end
+        ESP_Storage[model].Name.Visible = false
+    end
+end
+
+-- ===== MAIN LOOP =====
+RunService.RenderStepped:Connect(function()
+    -- Đổi màu Rainbow
+    if RainbowMode then
+        Hue = tick() % 5 / 5; MainColor = Color3.fromHSV(Hue, 1, 1)
+        mainStroke.Color = MainColor; btnStroke.Color = MainColor; FOV.Color = MainColor
+    end
+
+    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    FOV.Position = center
+
+    -- Ẩn tất cả ESP nếu bị tắt hoặc không còn trong danh sách mục tiêu
+    for model, drawings in pairs(ESP_Storage) do
+        if not ActiveTargets[model] or not ESPEnabled then
+            HideESP(model)
+        end
+    end
+
+    local aimTarget = nil
+    local dist = Radius
+
+    -- Xử lý các mục tiêu đang active (Player & Quái biết di chuyển)
+    for model, nameStr in pairs(ActiveTargets) do
+        if model and model.Parent then
+            local hrp = model:FindFirstChild("HumanoidRootPart")
+            local head = model:FindFirstChild("Head") or hrp
+            local hum = model:FindFirstChild("Humanoid")
+            
+            -- Đảm bảo mục tiêu chưa die
+            if hum and hrp and hum.Health > 0 then
+                local pos, onScreen = Camera:WorldToViewportPoint(hrp.Position)
+                
+                -- Tính toán Aimbot
+                if AimEnabled and onScreen then
+                    local hPos, hScreen = Camera:WorldToViewportPoint(head.Position)
+                    if hScreen then
+                        local mag = (Vector2.new(hPos.X, hPos.Y) - center).Magnitude
+                        if mag < dist then dist = mag; aimTarget = head end
+                    end
+                end
+
+                -- Vẽ ESP Góc Nhọn (Corner Box)
+                if ESPEnabled and onScreen then
+                    local drawings = GetESP(model)
+                    local sizeX = 2200 / pos.Z
+                    local sizeY = 3200 / pos.Z
+                    local x, y = pos.X, pos.Y
+                    local w, h = sizeX/2, sizeY/2
+                    local lineLen = sizeX / 4 
+
+                    local points = {
+                        {Vector2.new(x-w, y-h), Vector2.new(x-w+lineLen, y-h)}, {Vector2.new(x-w, y-h), Vector2.new(x-w, y-h+lineLen)},
+                        {Vector2.new(x+w, y-h), Vector2.new(x+w-lineLen, y-h)}, {Vector2.new(x+w, y-h), Vector2.new(x+w, y-h+lineLen)},
+                        {Vector2.new(x-w, y+h), Vector2.new(x-w+lineLen, y+h)}, {Vector2.new(x-w, y+h), Vector2.new(x-w, y+h-lineLen)},
+                        {Vector2.new(x+w, y+h), Vector2.new(x+w-lineLen, y+h)}, {Vector2.new(x+w, y+h), Vector2.new(x+w, y+h-lineLen)}
+                    }
+
+                    for i, line in pairs(drawings.Corners) do
+                        line.From = points[i][1]; line.To = points[i][2]; line.Visible = true; line.Color = MainColor
+                    end
+                    
+                    drawings.Name.Text = nameStr
+                    drawings.Name.Position = Vector2.new(x, y - h - 15)
+                    drawings.Name.Visible = true
+                end
+
+                -- Hitbox Logic
+                if HitboxEnabled then
+                    hrp.Size = Vector3.new(HitboxSize, HitboxSize, HitboxSize)
+                    hrp.Transparency = 0.7; hrp.Color = MainColor; hrp.CanCollide = false
+                else
+                    hrp.Size = Vector3.new(2, 2, 1); hrp.Transparency = 1
+                end
+            else
+                HideESP(model)
+                ActiveTargets[model] = nil -- Loại khỏi danh sách nếu die
+            end
+        end
+    end
+
+    -- Thực thi Aimbot
+    if aimTarget then Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, aimTarget.Position), Smooth) end
+end)
+
+-- ===== MENU CONTENT =====
+AddToggle("Auto Snap (Ghim tâm)", leftCol, function(v) AimEnabled = v end)
+AddToggle("ESP Box Nhọn & Tên", leftCol, function(v) ESPEnabled = v end)
+AddToggle("Bật Hitbox", leftCol, function(v) HitboxEnabled = v end)
+
+AddSlider("Cỡ Hitbox", 2, 20, rightCol, function(v) HitboxSize = v end)
+AddSlider("Bán kính ghim", 50, 500, rightCol, function(v) Radius = v; FOV.Radius = v end)
+AddToggle("Hiện FOV Mảnh", rightCol, function(v) FOV.Visible = v end)
+AddToggle("Cầu Vồng VIP", rightCol, function(v) RainbowMode = v end)
+
+toggleBtn.MouseButton1Click:Connect(function() main.Visible = not main.Visible end)
